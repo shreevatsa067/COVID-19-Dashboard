@@ -74,7 +74,8 @@ def choropleth_map(input_df):
             )
         )
     fig3.update_layout(
-        height=600, margin={"r":10,"t":10,"l":10,"b":10})
+        height=600, margin={"r":10,"t":50,"l":10,"b":10}, template='plotly_dark',
+        title_text='World map to visualise the spread of COVID-19', title_x=0.5)
                 
     return fig3
 
@@ -218,9 +219,6 @@ final_df=calc_doubling_rate(final_df,'Confirmed_filtered').reset_index(drop=True
 #Defining a mask to have doubling rate values for confirmed cases more than 100
 mask=final_df['Confirmed']>100
 final_df['Confirmed_filtered_DR']=final_df['Confirmed_filtered_DR'].where(mask, other=np.NaN)
-
-# fig=go.Figure(go.Choropleth())
-# fig.update_layout(width=900, height=500, margin={"r":0,"t":0,"l":0,"b":0}, template='plotly_dark')
     
 app=dash.Dash()
 
