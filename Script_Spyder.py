@@ -1,3 +1,9 @@
+# COVID-19 Dashboard Prototype
+# By, Shreevatsa Puttige Subramanya (411866)
+# This Dashboard gives an overview of the spread of COVID-19 around the world. 
+# The graphs show the confirmed cases and the doubling rate for each country. 
+#Finally, a SIR model for spread of disease is implemented and is visualised.
+
 import pandas as pd
 import numpy as np
 import json
@@ -25,24 +31,24 @@ def get_data():
     
     '''
     page = requests.get("https://api.covid19api.com/all")
-    json_object=json.loads(page.content)
-    pd_dataframe=pd.DataFrame(json_object)
-    pd_dataframe=pd_dataframe.drop(['Lat','Lon','CountryCode','CityCode'],axis=1)
+    json_object = json.loads(page.content)
+    pd_dataframe = pd.DataFrame(json_object)
+    pd_dataframe = pd_dataframe.drop(['Lat','Lon','CountryCode','CityCode'],axis=1)
     pd_dataframe['Date'] = pd_dataframe['Date'].astype('datetime64[ns]')
     
     #Collecting overall country data for USA
-    US_Data=pd_dataframe[(pd_dataframe['Country']=='United States of America') &\
+    US_Data = pd_dataframe[(pd_dataframe['Country']=='United States of America') &\
                          (pd_dataframe['Province'] == '')].drop(['Province','City'],axis=1).reset_index(drop=True)
         
     #Deleting the city wise distribution of the US data from the original dataframe
-    dataframe=pd_dataframe.drop(pd_dataframe[pd_dataframe['Country'] == 'United States of America'].index)\
+    dataframe = pd_dataframe.drop(pd_dataframe[pd_dataframe['Country'] == 'United States of America'].index)\
         .drop(['Province','City'],axis=1).reset_index(drop=True)
         
     #Groupby apply to get the daily status for each country 
-    data_frame=dataframe.groupby(['Country','Date']).agg(np.sum).reset_index()
+    data_frame = dataframe.groupby(['Country','Date']).agg(np.sum).reset_index()
     
     #Appending the US data to the original dataframe
-    df_input=data_frame.append(US_Data, ignore_index=True)
+    df_input = data_frame.append(US_Data, ignore_index=True)
     
     return df_input
 
@@ -59,7 +65,7 @@ def choropleth_map(input_df):
     fig3: plotly choropleth map graph object
     
     '''
-    fig3=go.Figure(
+    fig3 = go.Figure(
         data=go.Choropleth(
             locations=input_df['Country'],
             locationmode='country names',
@@ -79,14 +85,14 @@ def choropleth_map(input_df):
                 
     return fig3
 
-def calc_doubling_rate(df_input, filter_on='Confirmed'):
+def doubling_rate(df_input, clmn='Confirmed'):
     '''
     Helper function to group-by calculate the doubling time
     
     Parameters:
     ----------
     df_input: pandas Dataframe
-    filter_on: The column on which the doubling rate is calculated 
+    clmn: The column on which the doubling rate is calculated 
                 (Confirmed or confirmed_filtered)
     
     Returns:
@@ -95,21 +101,17 @@ def calc_doubling_rate(df_input, filter_on='Confirmed'):
     
     '''
     
-    must_contain=set(['Country',filter_on])
-    assert must_contain.issubset(set(df_input.columns))
-    
-    pd_DR_result= df_input.groupby('Country').apply(rolling_reg, filter_on).reset_index()
+    pd_DR_result = df_input.groupby('Country').apply(rolling_reg, clmn).reset_index()
 
-    pd_DR_result=pd_DR_result.rename(columns={filter_on:filter_on+'_DR',
-                             'level_1':'index'})
+    pd_DR_result = pd_DR_result.rename(columns ={clmn:clmn+'_DR','level_1':'index'})
 
-    #we do the merge on the index of our big table and on the index column after groupby
+    #Merging the dataset with doubling rate column with the original dataframe
     
-    df_output=pd.merge(df_input,pd_DR_result[['index',str(filter_on+'_DR')]],left_index=True,right_on=['index'],how='left')
-    df_output=df_output.drop(columns=['index'])
+    df_output = pd.merge(df_input,pd_DR_result[['index',str(clmn+'_DR')]],left_index=True,right_on=['index'],how='left')
+    df_output = df_output.drop(columns=['index'])
     return df_output
     
-def get_doubling_time_via_regression(in_array):
+def doubling_time_via_regression(in_array):
     ''' Use a linear regression to approximate the doubling rate
 
         Parameters:
@@ -118,7 +120,7 @@ def get_doubling_time_via_regression(in_array):
 
         Returns:
         ----------
-        Doubling rate: double
+        intercept/slope (Doubling rate): double
     '''
 
     y = np.array(in_array)
@@ -126,7 +128,7 @@ def get_doubling_time_via_regression(in_array):
 
     assert len(in_array)==3
     reg.fit(X,y)
-    intercept=reg.intercept_
+    intercept = reg.intercept_
     slope=reg.coef_
 
     return intercept/slope
@@ -137,88 +139,83 @@ def rolling_reg(df_input, col='Confirmed'):
         Parameters:
         ----------
         df_input: pd.DataFrame
-        col: str
-            defines the used column
+        col: str - Confirmed or Confirmed_filtered column
+        
         Returns:
         ----------
-        result: pd.DataFrame
+        result: Pandas DataFrame
     '''
-    days_back=3
-    result=df_input[col].rolling(
-                window=days_back,
-                min_periods=days_back).apply(get_doubling_time_via_regression,raw=False)
+    days_back = 3
+    result = df_input[col].rolling(
+                window = days_back,
+                min_periods = days_back).apply(doubling_time_via_regression, raw = False)
     
     return result
 
-def calc_filtered_data(df_input,filter_on='Confirmed'):
-    '''  Calculate savgol filter and return merged data frame
+def filter_data(df_input,column='Confirmed'):
+    '''  Helper function to apply savgol filter to filter the data in confirmed or confirmed_filtered column
 
         Parameters:
         ----------
         df_input: pd.DataFrame
-        filter_on: str
-            defines the used column
+        column: str - Confirmed or Confirmed_filtered column
+            
         Returns:
         ----------
-        df_output: pd.DataFrame
-            the result will be joined as a new column on the input data frame
+        df_output: Pandas DataFrame with merged additional columns
+    
     '''
 
-    must_contain=set(['Country',filter_on])
-    assert must_contain.issubset(set(df_input.columns)), ' Erro in calc_filtered_data not all columns in data frame'
+    df_output = df_input.copy() 
 
-    df_output=df_input.copy() # we need a copy here otherwise the filter_on column will be overwritten
+    pd_filtered_result = df_output[['Country',column]].groupby(['Country']).apply(savgol_filter)#.reset_index()
 
-    pd_filtered_result=df_output[['Country',filter_on]].groupby(['Country']).apply(savgol_filter)#.reset_index()
-
-    df_output=pd.merge(df_output,pd_filtered_result[[str(filter_on+'_filtered')]],left_index=True,right_index=True,how='left')
+    df_output = pd.merge(df_output,pd_filtered_result[[str(column+'_filtered')]],left_index=True,right_index=True,how='left')
    
     return df_output.copy()
 
 def savgol_filter(df_input,column='Confirmed',window=5):
-    ''' Savgol Filter which can be used in groupby apply function (data structure kept)
+    ''' Savgol Filter to filter the data in confirmed or confirmed_filtered column  
 
-        parameters:
+        Parameters:
         ----------
         df_input : pandas.series
-        column : str
-        window : int
-            used data points to calculate the filter result
+        column : str - Confirmed or Confirmed_filtered column
+        window : int - window size (or number of data points) used to filter data
 
         Returns:
         ----------
-        df_result: pd.DataFrame
-            the index of the df_input has to be preserved in result
+        df_result: Pandas DataFrame
+            the index of the df_input is retained to merge the dataset in filter_data
     '''
 
-    df_result=df_input
+    df_result = df_input
 
-    filter_in=df_input[column].fillna(0) # attention with the neutral element here
+    filter_in = df_input[column].fillna(0)
 
-    result=signal.savgol_filter(np.array(filter_in),
-                           window, # window size used for filtering
-                           1)
-    df_result[str(column+'_filtered')]=result
+    result = signal.savgol_filter(np.array(filter_in), window, 1)
+    
+    df_result[str(column+'_filtered')] = result
     return df_result
 
 #Get the covid-19 data through REST API
-covid_data=get_data()
+covid_data = get_data()
 #Dataframe for the choropleth map
-df_map=covid_data.loc[covid_data['Date']==covid_data['Date'].max()].reset_index(drop=True)
-df_map['Date']=pd.to_datetime(df_map['Date']).dt.date
+df_map = covid_data.loc[covid_data['Date']==covid_data['Date'].max()].reset_index(drop=True)
+df_map['Date'] = pd.to_datetime(df_map['Date']).dt.date
 
-pd_api_data=covid_data[['Country', 'Date', 'Confirmed']]
+pd_api_data = covid_data[['Country', 'Date', 'Confirmed']]
 
 #To obtain the filtered data for the confirmed cases
-final_df=calc_filtered_data(pd_api_data)
+final_df = filter_data(pd_api_data)
 
 #Calculating the doubling rate for confirmed and confirmed filtered column
-final_df = calc_doubling_rate(final_df).reset_index(drop=True)
-final_df=calc_doubling_rate(final_df,'Confirmed_filtered').reset_index(drop=True)
+final_df = doubling_rate(final_df).reset_index(drop=True)
+final_df = doubling_rate(final_df,'Confirmed_filtered').reset_index(drop=True)
 
 #Defining a mask to have doubling rate values for confirmed cases more than 100
-mask=final_df['Confirmed']>100
-final_df['Confirmed_filtered_DR']=final_df['Confirmed_filtered_DR'].where(mask, other=np.NaN)
+mask = final_df['Confirmed']>100
+final_df['Confirmed_filtered_DR'] = final_df['Confirmed_filtered_DR'].where(mask, other=np.NaN)
     
 app=dash.Dash()
 
@@ -257,13 +254,13 @@ app.layout=html.Div(children=[
     dcc.Dropdown(
             id='country_drop_down',
             options=[{'label': each,'value':each} for each in final_df['Country'].unique()],
-            value=['Germany','Italy'],
+            value=['Germany','United States of America'],
             multi=True,
             style={'margin': '10px', 'width':'1000px'}
         ),
     
      dcc.Dropdown(
-        id='doubling_time',
+        id='stats',
         options=[
             {'label': 'Confirmed ', 'value': 'Confirmed'},
             {'label': 'Doubling Rate', 'value': 'Confirmed_DR'},
@@ -275,7 +272,7 @@ app.layout=html.Div(children=[
         style={'width':'300px','margin': '10px'}
         ),
     
-    dcc.Graph(id='main_window_slope',style={'width':'100%'}),
+    dcc.Graph(id='display_stats',style={'width':'100%'}),
     
     dcc.Markdown('''
                  ## SIR model for spread of disease
@@ -301,9 +298,9 @@ app.layout=html.Div(children=[
                              
                  
 @app.callback(
-    Output('main_window_slope', 'figure'),
+    Output('display_stats', 'figure'),
     [Input('country_drop_down', 'value'),
-    Input('doubling_time', 'value')])
+    Input('stats', 'value')])
 def update_figure(country_list,show_doubling):
 
 
@@ -313,7 +310,7 @@ def update_figure(country_list,show_doubling):
               }
     else:
         my_yaxis={'type':"log",
-                  'title':'Confirmed infected people (source johns hopkins, log-scale)'
+                  'title':'Confirmed infections (source johns hopkins, log-scale)'
               }
     
     fig1=go.Figure()
@@ -344,7 +341,7 @@ def SIR_curves(country_list_sir):
     ydata=np.array(df_sir[['Confirmed', 'Recovered']].reset_index(drop=True).iloc[20:,])
     N0=10000000
     
-    def SIR_model_t(SIR,t,beta,gamma):
+    def SIR_model_eq(SIR,t,beta,gamma):
         ''' Simple SIR disease spread model
             S: susceptible population
             t: time step
@@ -361,24 +358,26 @@ def SIR_curves(country_list_sir):
         dR_dt=gamma*I
         return dS_dt,dI_dt,dR_dt
 
-    def fit_odeint(x, beta, gamma):
+    def integrate_sir(x, beta, gamma):
         
-        return integrate.odeint(SIR_model_t, (S0, I0, R0), t, args=(beta, gamma))[:,1] 
+        return integrate.odeint(SIR_model_eq, (S0, I0, R0), t, args=(beta, gamma))[:,1] 
     
     fig2=go.Figure()
-    
+    window_sir = 30
     fitted_final=[]
     
     for i in range(len(ydata)):
-        if i%20 ==0:
+        if i%window_sir ==0:
             if len(ydata[i:])>5:
-                y_new=ydata[i:i+20,0]
+                y_new=ydata[i:i+window_sir,0]
                 t=np.arange(len(y_new))
+                #Initialize parameters of SIR model
                 R0=ydata[i,1]
                 I0=y_new[0]
                 S0=N0-I0-R0
-                popt, pcov = optimize.curve_fit(fit_odeint, t, y_new)
-                fitted=fit_odeint(t, *popt)
+                #Calculate optimized beta and gamma
+                popt, pcov = optimize.curve_fit(integrate_sir, t, y_new)
+                fitted=integrate_sir(t, *popt)
                 fitted_final.extend(fitted)
     
     fig2.add_traces(go.Scatter(x=df_sir.Date[20:,], y=fitted_final, mode='markers+lines', 
